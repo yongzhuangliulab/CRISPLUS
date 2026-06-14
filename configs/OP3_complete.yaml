@@ -1,0 +1,21 @@
+training:
+  checkpoint_freq: 25
+  num_epochs: 51
+  max_minutes: 1000
+
+dataset:
+  perturbation_key: condition
+  pert_category: cov_drug_name
+  dose_key: dose_val
+  celltype_key: cell_type
+  smiles_key: SMILES
+  adata_obj: ../../data/OP3_complete_pp_hvg_scFM_resplit.h5ad
+  degs_key: rank_genes_groups_cov
+  control_key: neg_control
+  split_key: split
+  split_ood: True
+  pc_cov: type_donor
+  FM_key: X_scGPT
+
+model:
+  drug_emb: ../../data/drug_embeddings/rdkit2D_embedding_OP3_complete.parquet
