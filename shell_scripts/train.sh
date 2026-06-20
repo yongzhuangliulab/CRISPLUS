@@ -45,6 +45,7 @@ for sp in split1 split2 split3 split4; do
                 --seed $sd \
                 --savedir ../results/OP3_complete_unseen_drug/OP3_complete_unseen_drug_${sp}_${sd} \
                 --MMD $MMD \
+                --celltype_co 1 \
                 \> ../results/OP3_complete_unseen_drug/OP3_complete_unseen_drug_${sp}_${sd}/output.log \
                 2\>\&1 \
                 \&;
@@ -66,10 +67,8 @@ done;
 
 # for sp in split1 split2 split3 split4; do
 #     for sd in 1327 1337 1347; do
-#         for MMD in 0.1; do
-#             echo \
-#                 rm ../results/OP3_complete/OP3_complete_${sp}_${sd}/*;
-#         done;
+#         echo \
+#             rm ../results/OP3_complete/OP3_complete_${sp}_${sd}/*;
 #     done;
 # done;
 
@@ -85,6 +84,7 @@ done;
 #                 --seed $sd \
 #                 --savedir ../results/OP3_complete/OP3_complete_${sp}_${sd} \
 #                 --MMD $MMD \
+#                 --celltype_co 1 \
 #                 \> ../results/OP3_complete/OP3_complete_${sp}_${sd}/output.log \
 #                 2\>\&1 \
 #                 \&;
