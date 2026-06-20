@@ -25,6 +25,18 @@ METHODS = [
         "run_prefix": "OP3_complete_unseen_drug",
         "color": "#4c78a8",
     },
+    {
+        "name": "CRISPLUSv0.1",
+        "root": Path("../results/OP3_complete_unseen_drug_CRISPLUSv0.1"),
+        "run_prefix": "OP3_complete_unseen_drug",
+        "color": "#54a24b",
+    },
+    {
+        "name": "CRISPLUSv0.2",
+        "root": Path("../results/OP3_complete_unseen_drug_CRISPLUSv0.2"),
+        "run_prefix": "OP3_complete_unseen_drug",
+        "color": "#b279a2",
+    },
 ]
 
 METHOD_ORDER = [m["name"] for m in METHODS]
