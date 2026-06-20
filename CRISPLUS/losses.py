@@ -292,3 +292,7 @@ def dir_loss(y, pred, degs, ctrl):
     dir = sum(dir)/len(torch.nonzero(num_degs)+1e-6)
 
     return dir
+
+def cfm_loss(pred_v, z0, z1):
+    target_v = z1 - z0
+    return F.mse_loss(pred_v, target_v)

@@ -143,6 +143,16 @@ def evaluate(autoencoder: PertAE, treated_dataset: SubDataset, control_dataset: 
 
         cell_embeddings_sub = control_dataset.paired_cell_embeddings[control_dataset.celltype == ct].to('cuda')
 
+        # # ===== DEBUG eval.py / evaluate(): control input check =====
+        # if len(pred_dict) == 0:
+        #     print("\n[DEBUG eval.py / evaluate()]")
+        #     print("cell_drug_dose_comb:", cell_drug_dose_comb)
+        #     print("ct:", ct)
+        #     print("genes_control_sub:", genes_control_sub.shape)
+        #     print("cell_embeddings_sub:", cell_embeddings_sub.shape)
+        #     print("drug idx example:", emb_drugs[0][0].item() if emb_drugs[0].ndim > 0 else emb_drugs[0].item())
+        #     print("dose example:", emb_drugs[1][0].item() if emb_drugs[1].ndim > 0 else emb_drugs[1].item())
+
         preds = compute_prediction_CRISP(
             autoencoder,
             genes_control_sub,

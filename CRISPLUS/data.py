@@ -587,9 +587,16 @@ class SubDataset:
         self.covariate_keys = dataset.covariate_keys
         self.canon_smiles_unique_sorted = dataset.canon_smiles_unique_sorted
 
+        # self.genes = dataset.genes[indices]
+        # # self.paired_genes = dataset.paired_genes[indices]
+        # # self.paired_std = dataset.paired_std[indices]
+        # self.paired_cell_embeddings = dataset.paired_cell_embeddings[indices]
         self.genes = dataset.genes[indices]
-        # self.paired_genes = dataset.paired_genes[indices]
-        # self.paired_std = dataset.paired_std[indices]
+        # z1: target current-cell FM embedding.
+        # treated cells: true treated embedding
+        # control cells: true control embedding
+        self.cell_embeddings = dataset.FM_emb[indices]
+        # z0: paired control/source FM embedding
         self.paired_cell_embeddings = dataset.paired_cell_embeddings[indices]
 
         self.drugs_idx = indx(dataset.drugs_idx, indices)
@@ -627,10 +634,15 @@ class SubDataset:
         if split_set == 'train':
             neg_idx = dataset.neg_idx
             self.neg_idx = neg_idx
+
+            # self.neg_genes = self.genes[neg_idx]
+            # # self.neg_paired_genes = self.paired_genes[neg_idx]
+            # # self.neg_paired_std = self.paired_std[neg_idx]
+            # self.neg_paired_cell_embeddings = self.paired_cell_embeddings[neg_idx]
             self.neg_genes = self.genes[neg_idx]
-            # self.neg_paired_genes = self.paired_genes[neg_idx]
-            # self.neg_paired_std = self.paired_std[neg_idx]
+            self.neg_cell_embeddings = self.cell_embeddings[neg_idx]
             self.neg_paired_cell_embeddings = self.paired_cell_embeddings[neg_idx]
+
             self.neg_drugs_idx = indx(self.drugs_idx, neg_idx)
             self.neg_dosages = indx(self.dosages, neg_idx)
             self.neg_degs = self.degs[neg_idx]
@@ -645,43 +657,98 @@ class SubDataset:
 
 
     def __getitem__(self, i):
+        # # ===== DEBUG data.py / SubDataset.__getitem__() =====
+        # # 注意：这个会被 dataloader 多次调用，所以只建议非常临时地开。
+        # if i == 0 and not hasattr(self, "_debug_getitem_printed"):
+        #     print("\n[DEBUG data.py / SubDataset.__getitem__()]")
+        #     print("genes[0]:", self.genes[i].shape)
+        #     print("cell_embeddings[0] target z1:", self.cell_embeddings[i].shape)
+        #     print("paired_cell_embeddings[0] source z0:", self.paired_cell_embeddings[i].shape)
+        #     print("drugs_idx[0]:", indx(self.drugs_idx, i))
+        #     print("dosages[0]:", indx(self.dosages, i))
+        #     print("degs[0]:", indx(self.degs, i).shape)
+        #     print("celltype_idx[0]:", indx(self.celltype_idx, i))
+        #     print("group_idxs[0]:", indx(self.group_idxs, i))
+        #     self._debug_getitem_printed = True
         if (self.covariates is None):
+            # return (
+            #     self.genes[i],
+            #     self.paired_cell_embeddings[i],
+            #     # self.paired_genes[i],
+            #     # self.paired_std[i],
+            #     indx(self.drugs_idx, i),
+            #     indx(self.dosages, i),
+            #     indx(self.degs, i),
+            #     indx(self.celltype_idx, i),
+            #     self.neg_genes[i],
+            #     self.neg_paired_cell_embeddings[i],
+            #     # self.neg_paired_genes[i],
+            #     # self.neg_paired_std[i],
+            #     indx(self.neg_drugs_idx, i),
+            #     indx(self.neg_dosages, i),
+            #     indx(self.neg_degs, i),
+            #     indx(self.neg_celltype_idx, i),
+            #     None,
+            #     None,
+            # )
             return (
-                self.genes[i],
-                self.paired_cell_embeddings[i],
-                # self.paired_genes[i],
-                # self.paired_std[i],
-                indx(self.drugs_idx, i),
-                indx(self.dosages, i),
-                indx(self.degs, i),
-                indx(self.celltype_idx, i),
-                self.neg_genes[i],
-                self.neg_paired_cell_embeddings[i],
-                # self.neg_paired_genes[i],
-                # self.neg_paired_std[i],
-                indx(self.neg_drugs_idx, i),
-                indx(self.neg_dosages, i),
-                indx(self.neg_degs, i),
-                indx(self.neg_celltype_idx, i),
-                None,
-                None,
+                self.genes[i],                       # 0: x1 gene target
+                self.cell_embeddings[i],             # 1: z1 target FM embedding
+                self.paired_cell_embeddings[i],      # 2: z0 source FM embedding
+                indx(self.drugs_idx, i),             # 3
+                indx(self.dosages, i),               # 4
+                indx(self.degs, i),                  # 5
+                indx(self.celltype_idx, i),          # 6
+                indx(self.group_idxs, i),            # 7
+
+                self.neg_genes[i],                   # 8
+                self.neg_cell_embeddings[i],         # 9
+                self.neg_paired_cell_embeddings[i],  # 10
+                indx(self.neg_drugs_idx, i),         # 11
+                indx(self.neg_dosages, i),           # 12
+                indx(self.neg_degs, i),              # 13
+                indx(self.neg_celltype_idx, i),      # 14
+
+                None,                                # 15 covariates
+                None,                                # 16 neg_covariates
             )
         else:
+            # return (
+            #     self.genes[i],
+            #     self.paired_cell_embeddings[i],
+            #     # self.paired_genes[i],
+            #     indx(self.drugs_idx, i),
+            #     indx(self.dosages, i),
+            #     indx(self.degs, i),
+            #     indx(self.celltype_idx, i),
+            #     self.neg_genes[i],
+            #     self.neg_paired_cell_embeddings[i],
+            #     # self.neg_paired_genes[i],
+            #     indx(self.neg_drugs_idx, i),
+            #     indx(self.neg_dosages, i),
+            #     indx(self.neg_degs, i),
+            #     indx(self.neg_celltype_idx, i),
+            #     *[indx(cov, i) for cov in self.covariates],
+            #     *[indx(cov, i) for cov in self.neg_covariates],
+            # )
             return (
                 self.genes[i],
+                self.cell_embeddings[i],
                 self.paired_cell_embeddings[i],
-                # self.paired_genes[i],
                 indx(self.drugs_idx, i),
                 indx(self.dosages, i),
                 indx(self.degs, i),
                 indx(self.celltype_idx, i),
+                indx(self.group_idxs, i),
+
                 self.neg_genes[i],
+                self.neg_cell_embeddings[i],
                 self.neg_paired_cell_embeddings[i],
-                # self.neg_paired_genes[i],
                 indx(self.neg_drugs_idx, i),
                 indx(self.neg_dosages, i),
                 indx(self.neg_degs, i),
                 indx(self.neg_celltype_idx, i),
+
                 *[indx(cov, i) for cov in self.covariates],
                 *[indx(cov, i) for cov in self.neg_covariates],
             )

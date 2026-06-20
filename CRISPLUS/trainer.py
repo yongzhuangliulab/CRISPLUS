@@ -243,22 +243,103 @@ class Trainer:
             epoch_training_stats = defaultdict(float)
 
             for data in self.datasets["loader_tr"]:
-                genes, paired_cell_embeddings, drugs_idx, dosages, degs, celltype_idx = data[:6]
+                # genes, paired_cell_embeddings, drugs_idx, dosages, degs, celltype_idx = data[:6]
                 
-                neg_genes, neg_paired_cell_embeddings, neg_drugs_idx, neg_dosages, neg_degs, neg_celltype_idx = data[6:12]
+                # neg_genes, neg_paired_cell_embeddings, neg_drugs_idx, neg_dosages, neg_degs, neg_celltype_idx = data[6:12]
 
-                covariates,neg_covariates = data[12], data[13]
+                # covariates,neg_covariates = data[12], data[13]
+                (
+                    genes,
+                    target_cell_embeddings,
+                    paired_cell_embeddings,
+                    drugs_idx,
+                    dosages,
+                    degs,
+                    celltype_idx,
+                    group_idx,
 
+                    neg_genes,
+                    neg_target_cell_embeddings,
+                    neg_paired_cell_embeddings,
+                    neg_drugs_idx,
+                    neg_dosages,
+                    neg_degs,
+                    neg_celltype_idx,
+
+                    covariates,
+                    neg_covariates,
+                ) = data
+
+                # # ===== DEBUG 1: check dataloader outputs =====
+                # if epoch == 0 and self.autoencoder.iteration == 0:
+                #     print("\n[DEBUG trainer.py / train() dataloader]")
+                #     print("genes:", genes.shape)
+                #     print("target_cell_embeddings:", target_cell_embeddings.shape)
+                #     print("paired_cell_embeddings:", paired_cell_embeddings.shape)
+                #     print("drugs_idx:", drugs_idx.shape, drugs_idx.dtype)
+                #     print("dosages:", dosages.shape, dosages.dtype)
+                #     print("degs:", degs.shape, degs.dtype)
+                #     print("celltype_idx:", celltype_idx.shape, celltype_idx.dtype)
+                #     print("group_idx:", group_idx.shape, group_idx.dtype)
+
+                #     print("neg_genes:", neg_genes.shape)
+                #     print("neg_target_cell_embeddings:", neg_target_cell_embeddings.shape)
+                #     print("neg_paired_cell_embeddings:", neg_paired_cell_embeddings.shape)
+                #     print("neg_drugs_idx:", neg_drugs_idx.shape, neg_drugs_idx.dtype)
+                #     print("neg_dosages:", neg_dosages.shape, neg_dosages.dtype)
+                #     print("neg_degs:", neg_degs.shape, neg_degs.dtype)
+                #     print("neg_celltype_idx:", neg_celltype_idx.shape, neg_celltype_idx.dtype)
+
+                #     if covariates is None:
+                #         print("covariates: None")
+                #     else:
+                #         print("covariates:", [c.shape for c in covariates])
+
+                #     if neg_covariates is None:
+                #         print("neg_covariates: None")
+                #     else:
+                #         print("neg_covariates:", [c.shape for c in neg_covariates])
+
+                # # ===== DEBUG 2: source/target semantic check before model =====
+                # if epoch == 0 and self.autoencoder.iteration == 0:
+                #     diff = (target_cell_embeddings - paired_cell_embeddings).abs().mean().item()
+                #     print("[DEBUG trainer.py] mean |target_embedding - paired_embedding|:", diff)
+
+                # training_stats = self.autoencoder.iter_update(
+                #     genes=genes,
+                #     cell_embeddings=paired_cell_embeddings,
+                #     drugs_idx=drugs_idx,
+                #     dosages=dosages,
+                #     degs=degs,
+                #     celltype_idx=celltype_idx,
+                #     covariates=covariates,
+                #     neg_genes=neg_genes,
+                #     neg_cell_embeddings=neg_paired_cell_embeddings,
+                #     neg_drugs_idx=neg_drugs_idx,
+                #     neg_dosages=neg_dosages,
+                #     neg_degs=neg_degs,
+                #     neg_celltype_idx=neg_celltype_idx,
+                #     neg_covariates=neg_covariates,
+                # )
                 training_stats = self.autoencoder.iter_update(
                     genes=genes,
-                    cell_embeddings=paired_cell_embeddings,
+
+                    # z0 source
+                    source_embeddings=paired_cell_embeddings,
+
+                    # z1 target
+                    target_embeddings=target_cell_embeddings,
+
                     drugs_idx=drugs_idx,
                     dosages=dosages,
                     degs=degs,
                     celltype_idx=celltype_idx,
+                    group_idx=group_idx,
                     covariates=covariates,
+
                     neg_genes=neg_genes,
-                    neg_cell_embeddings=neg_paired_cell_embeddings,
+                    neg_source_embeddings=neg_paired_cell_embeddings,
+                    neg_target_embeddings=neg_target_cell_embeddings,
                     neg_drugs_idx=neg_drugs_idx,
                     neg_dosages=neg_dosages,
                     neg_degs=neg_degs,

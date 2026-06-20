@@ -68,6 +68,7 @@ if __name__ == "__main__":
     logging.info(f'Finish init drug embedding')
     device = "cuda" if torch.cuda.is_available() else "cpu"
     exp.init_model(
+        hparams=args["model"].get("hparams", ""),
         mmd_co=args['model']['mmd_co'],
         celltype_co=args['model']['celltype_co'],
         seed=args["model"]['seed'],
