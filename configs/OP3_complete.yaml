@@ -24,4 +24,6 @@ model:
     flow_co: 1.0
     gene_co: 1.0
     latent_co: 0.1
-    debug_predict: true
+    debug_predict: False
+    use_kld: True
+    kld_weight: 500
