@@ -333,13 +333,13 @@ class PertAE(torch.nn.Module):
             "celltype": 1,
             "cell_wd": 0.001,
             "mmd": 0.1,
+            'use_kld': False,
             "kld_weight": 500,
             "adapt": 0,
             "flow_steps": 8,
             "flow_co": 1.0,
             "gene_co": 1.0,
             "latent_co": 0.1,
-            "kld_co": 0.0,
             "debug_predict": False,
         }
 
@@ -403,7 +403,8 @@ class PertAE(torch.nn.Module):
         output = self.encoder_FM(cell_embeddings)
 
         mu = output[:, :self.hparams["lat_dim"]]
-        logvar = F.relu(output[:, self.hparams["lat_dim"]:]).clamp(max=10)
+        # logvar = F.relu(output[:, self.hparams["lat_dim"]:]).clamp(max=10)
+        logvar = output[:, self.hparams["lat_dim"]:].clamp(min=-10, max=10)
 
         if sample:
             eps = torch.randn_like(mu)
@@ -705,7 +706,6 @@ class PertAE(torch.nn.Module):
         z0, mu0, logvar0 = self.encode_FM(source_embeddings, sample=False)
 
         # z1: target latent, from true treated embedding
-        # use deterministic mu as target to reduce noise
         z1, mu1, logvar1 = self.encode_FM(target_embeddings, sample=False)
 
         cond_parts = self.get_condition_parts(
@@ -785,16 +785,25 @@ class PertAE(torch.nn.Module):
         # Optional endpoint latent loss
         latent_loss = F.mse_loss(z1_pred, z1.detach())
 
-        # Optional KLD on source encoder
-        kld_loss = -0.5 * (
-            1 + logvar0 - mu0**2 - torch.exp(logvar0)
-        ).sum(1).mean()
+        # Optional KLD regularization, CRISP-style weighting.
+        if self.hparams.get("use_kld", False):
+            st_mu = torch.cat([mu0, mu1], dim=0)
+            st_logvar = torch.cat([logvar0, logvar1], dim=0)
+            kld_loss = -0.5 * (
+                1 + st_logvar - st_mu**2 - torch.exp(st_logvar)
+            ).sum(1).mean()
+            kld_weight = 1.0 / (
+                self.hparams["kld_weight"] * st_mu.shape[1]
+            )
+        else:
+            kld_loss = torch.tensor(0.0, device=self.device)
+            kld_weight = 0.0
 
         loss = (
             self.hparams.get("flow_co", 1.0) * flow_loss
             + self.hparams.get("gene_co", 1.0) * reconstruction_loss
             + self.hparams.get("latent_co", 0.1) * latent_loss
-            + self.hparams.get("kld_co", 0.0) * kld_loss
+            + kld_weight * kld_loss
         )
 
         # # ===== DEBUG 6: losses =====
@@ -870,6 +879,8 @@ class PertAE(torch.nn.Module):
             "autofocus_loss": afloss.item(),
             "mse_loss": mseloss.item(),
             "kld": kld_loss.item(),
+            "kld_weight": kld_weight,
+            "kld_weighted": (kld_weight * kld_loss).item(),
             "loss_reconstruction": reconstruction_loss.item(),
         }
 
