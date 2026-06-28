@@ -37,6 +37,12 @@ METHODS = [
         "run_prefix": "OP3_complete",
         "color": "#b279a2",
     },
+    {
+        "name": "CRISPLUSv0.3",
+        "root": Path("../results/OP3_complete_CRISPLUSv0.3"),
+        "run_prefix": "OP3_complete",
+        "color": "#72b7b2",
+    },
 ]
 
 METHOD_ORDER = [m["name"] for m in METHODS]
