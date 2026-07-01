@@ -27,3 +27,4 @@ model:
     debug_predict: False
     use_kld: True
     kld_weight: 500
+    neg_co: 0.1
