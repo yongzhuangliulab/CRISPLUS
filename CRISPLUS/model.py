@@ -331,6 +331,7 @@ class PertAE(torch.nn.Module):
             "dropout": 0.2,
             "alpha": 0.75,
             "celltype": 1,
+            "neg_co": 0.1,
             "cell_wd": 0.001,
             "mmd": 0.1,
             'use_kld': False,
@@ -782,6 +783,13 @@ class PertAE(torch.nn.Module):
         alpha = self.hparams["alpha"]
         reconstruction_loss = mseloss * alpha + afloss * (1.0 - alpha)
 
+        # Gene-space distribution matching loss
+        mmdloss = MMDloss(
+            genes,
+            gene_reconstructions,
+            device=self.device,
+        )
+
         # Optional endpoint latent loss
         latent_loss = F.mse_loss(z1_pred, z1.detach())
 
@@ -799,10 +807,13 @@ class PertAE(torch.nn.Module):
             kld_loss = torch.tensor(0.0, device=self.device)
             kld_weight = 0.0
 
+        mmd_weight = self.hparams.get("mmd", 0.0)
+
         loss = (
             self.hparams.get("flow_co", 1.0) * flow_loss
             + self.hparams.get("gene_co", 1.0) * reconstruction_loss
             + self.hparams.get("latent_co", 0.1) * latent_loss
+            + mmd_weight * mmdloss
             + kld_weight * kld_loss
         )
 
@@ -878,6 +889,9 @@ class PertAE(torch.nn.Module):
             "latent_loss": latent_loss.item(),
             "autofocus_loss": afloss.item(),
             "mse_loss": mseloss.item(),
+            "mmd_loss": mmdloss.item(),
+            "mmd_weight": mmd_weight,
+            "mmd_weighted": (mmd_weight * mmdloss).item(),
             "kld": kld_loss.item(),
             "kld_weight": kld_weight,
             "kld_weighted": (kld_weight * kld_loss).item(),
