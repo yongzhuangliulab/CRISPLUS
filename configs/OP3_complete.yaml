@@ -27,4 +27,8 @@ model:
     debug_predict: False
     use_kld: True
     kld_weight: 500
-    neg_co: 0.1
+    use_source_context: False
+    detach_source_context: False
+    use_z0_ct_loss: False
+    z0_ct_co: 0.001
+    detach_z0_ct: False
