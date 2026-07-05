@@ -134,7 +134,47 @@ class PertAE(torch.nn.Module):
             last_layer_act='ReLU',
         )
 
-        cond_dim = self.hparams["lat_dim"] * (self.num_latents - 1)
+        if self.hparams.get("use_z0_ct_loss", False) and self.num_celltypes > 0:
+            self.ct_predictor_z0 = MLP(
+                [self.hparams["lat_dim"], 128, self.num_celltypes],
+                dropout=self.hparams["dropout"],
+                batch_norm=True,
+            )
+        else:
+            self.ct_predictor_z0 = None
+
+        # cond_dim = self.hparams["lat_dim"] * (self.num_latents - 1)
+
+        # self.time_encoder = MLP(
+        #     [1, 64, self.hparams["lat_dim"]],
+        #     dropout=self.hparams["dropout"],
+        #     batch_norm=False,
+        # )
+
+        # self.condition_projector = MLP(
+        #     [cond_dim]
+        #     + [self.hparams["encoder_width"]]
+        #     + [self.hparams["lat_dim"]],
+        #     dropout=self.hparams["dropout"],
+        #     batch_norm=True,
+        # )
+
+        base_cond_dim = self.hparams["lat_dim"] * (self.num_latents - 1)
+
+        self.use_source_context = self.hparams.get("use_source_context", True)
+
+        if self.use_source_context:
+            self.source_context_projector = MLP(
+                [self.hparams["lat_dim"]]
+                + [self.hparams["encoder_width"]]
+                + [self.hparams["lat_dim"]],
+                dropout=self.hparams["dropout"],
+                batch_norm=True,
+            )
+            cond_dim = base_cond_dim + self.hparams["lat_dim"]
+        else:
+            self.source_context_projector = None
+            cond_dim = base_cond_dim
 
         self.time_encoder = MLP(
             [1, 64, self.hparams["lat_dim"]],
@@ -233,6 +273,28 @@ class PertAE(torch.nn.Module):
         has_drugs = self.num_drugs > 0
         has_covariates = self.num_covariates[0] > 0
         get_params = lambda model, cond: list(model.parameters()) if cond else []
+        # _parameters = (
+        #     get_params(self.encoder_FM, True)
+        #     + get_params(self.decoder, True)
+        #     + get_params(self.drug_embeddings, has_drugs and embedding_requires_grad)
+        #     + get_params(self.drug_embedding_encoder, has_drugs)
+        #     + get_params(self.time_encoder, True)
+        #     + get_params(self.condition_projector, True)
+        #     + get_params(self.velocity_net, True)
+        # )
+        # _parameters = (
+        #     get_params(self.encoder_FM, True)
+        #     + get_params(self.decoder, True)
+        #     + get_params(self.drug_embeddings, has_drugs and embedding_requires_grad)
+        #     + get_params(self.drug_embedding_encoder, has_drugs)
+        #     + get_params(self.time_encoder, True)
+        #     + get_params(self.condition_projector, True)
+        #     + get_params(self.velocity_net, True)
+        #     + get_params(
+        #         self.source_context_projector,
+        #         self.source_context_projector is not None,
+        #     )
+        # )
         _parameters = (
             get_params(self.encoder_FM, True)
             + get_params(self.decoder, True)
@@ -241,6 +303,14 @@ class PertAE(torch.nn.Module):
             + get_params(self.time_encoder, True)
             + get_params(self.condition_projector, True)
             + get_params(self.velocity_net, True)
+            + get_params(
+                self.source_context_projector,
+                self.source_context_projector is not None,
+            )
+            + get_params(
+                self.ct_predictor_z0,
+                self.ct_predictor_z0 is not None,
+            )
         )
 
         if self.num_covariates != [0]:
@@ -278,6 +348,17 @@ class PertAE(torch.nn.Module):
 
         assert all(id(p) in opt_param_ids for p in self.condition_projector.parameters()), \
             "condition_projector parameters are not in optimizer_autoencoder"
+        
+        if self.source_context_projector is not None:
+            num_source_context_params = sum(
+                p.numel() for p in self.source_context_projector.parameters()
+            )
+            logging.info(f"source_context_projector params: {num_source_context_params}")
+
+            assert all(
+                id(p) in opt_param_ids
+                for p in self.source_context_projector.parameters()
+            ), "source_context_projector parameters are not in optimizer_autoencoder"
 
         self.optimizer_cell = torch.optim.Adam(
             cell_parameters,
@@ -341,6 +422,11 @@ class PertAE(torch.nn.Module):
             "flow_co": 1.0,
             "gene_co": 1.0,
             "latent_co": 0.1,
+            "use_source_context": True,
+            "detach_source_context": False,
+            "use_z0_ct_loss": True,
+            "z0_ct_co": 0.01,
+            "detach_z0_ct": False,
             "debug_predict": False,
         }
 
@@ -441,16 +527,57 @@ class PertAE(torch.nn.Module):
 
         return cond_parts
     
-    def velocity(self, zt, t, cond_parts):
+    def get_source_context(self, z0):
+        if self.source_context_projector is None:
+            return None
+
+        if self.hparams.get("detach_source_context", False):
+            z0 = z0.detach()
+
+        return self.source_context_projector(z0)
+
+    # def velocity(self, zt, t, cond_parts):
+    #     t_emb = self.time_encoder(t)
+
+    #     cond_raw = torch.cat(cond_parts, dim=1)
+    #     cond = self.condition_projector(cond_raw)
+
+    #     v_in = torch.cat([zt, t_emb, cond], dim=1)
+    #     return self.velocity_net(v_in)
+
+    def velocity(self, zt, t, cond_parts, source_context=None):
         t_emb = self.time_encoder(t)
 
-        cond_raw = torch.cat(cond_parts, dim=1)
+        if source_context is not None:
+            cond_raw = torch.cat(cond_parts + [source_context], dim=1)
+        else:
+            cond_raw = torch.cat(cond_parts, dim=1)
+
         cond = self.condition_projector(cond_raw)
 
         v_in = torch.cat([zt, t_emb, cond], dim=1)
         return self.velocity_net(v_in)
 
-    def flow_euler(self, z0, cond_parts, n_steps=None):
+    # def flow_euler(self, z0, cond_parts, n_steps=None):
+    #     if n_steps is None:
+    #         n_steps = self.hparams.get("flow_steps", 8)
+
+    #     z = z0
+    #     dt = 1.0 / n_steps
+
+    #     for k in range(n_steps):
+    #         t = torch.full(
+    #             (z.shape[0], 1),
+    #             float(k) / n_steps,
+    #             device=z.device,
+    #             dtype=z.dtype,
+    #         )
+    #         v = self.velocity(z, t, cond_parts)
+    #         z = z + dt * v
+
+    #     return z
+
+    def flow_euler(self, z0, cond_parts, source_context=None, n_steps=None):
         if n_steps is None:
             n_steps = self.hparams.get("flow_steps", 8)
 
@@ -464,7 +591,12 @@ class PertAE(torch.nn.Module):
                 device=z.device,
                 dtype=z.dtype,
             )
-            v = self.velocity(z, t, cond_parts)
+            v = self.velocity(
+                z,
+                t,
+                cond_parts,
+                source_context=source_context,
+            )
             z = z + dt * v
 
         return z
@@ -541,6 +673,18 @@ class PertAE(torch.nn.Module):
         )
 
         # inference uses deterministic basal latent
+        # z0, mu, logvar = self.encode_FM(cell_embeddings, sample=False)
+
+        # cond_parts = self.get_condition_parts(
+        #     drugs_idx=drugs_idx,
+        #     dosages=dosages,
+        #     covariates=covariates,
+        #     drugs_pre=drugs_pre,
+        # )
+
+        # z1_pred = self.flow_euler(z0, cond_parts)
+        # gene_reconstructions, latent_treated = self.decode_gene(z1_pred, cond_parts)
+
         z0, mu, logvar = self.encode_FM(cell_embeddings, sample=False)
 
         cond_parts = self.get_condition_parts(
@@ -550,8 +694,18 @@ class PertAE(torch.nn.Module):
             drugs_pre=drugs_pre,
         )
 
-        z1_pred = self.flow_euler(z0, cond_parts)
-        gene_reconstructions, latent_treated = self.decode_gene(z1_pred, cond_parts)
+        source_context = self.get_source_context(z0)
+
+        z1_pred = self.flow_euler(
+            z0,
+            cond_parts,
+            source_context=source_context,
+        )
+
+        gene_reconstructions, latent_treated = self.decode_gene(
+            z1_pred,
+            cond_parts,
+        )
 
         # # ===== DEBUG 8: predict path =====
         # if self.hparams.get("debug_predict", False):
@@ -706,6 +860,24 @@ class PertAE(torch.nn.Module):
         # z0: source latent, from paired control embedding
         z0, mu0, logvar0 = self.encode_FM(source_embeddings, sample=False)
 
+        if self.ct_predictor_z0 is not None and celltype_idx is not None:
+            z0_for_ct = z0
+
+            if self.hparams.get("detach_z0_ct", False):
+                z0_for_ct = z0_for_ct.detach()
+
+            ct_logits_z0 = self.ct_predictor_z0(z0_for_ct)
+            z0_ct_loss = self.loss_cell_pred(ct_logits_z0, celltype_idx)
+        else:
+            z0_ct_loss = genes.new_tensor(0.0)
+        if self.ct_predictor_z0 is not None and celltype_idx is not None:
+            with torch.no_grad():
+                z0_ct_acc = (
+                    ct_logits_z0.argmax(dim=1) == celltype_idx
+                ).float().mean()
+        else:
+            z0_ct_acc = genes.new_tensor(0.0)
+
         # z1: target latent, from true treated embedding
         z1, mu1, logvar1 = self.encode_FM(target_embeddings, sample=False)
 
@@ -714,6 +886,8 @@ class PertAE(torch.nn.Module):
             dosages=dosages,
             covariates=covariates,
         )
+
+        source_context = self.get_source_context(z0)
 
         # # ===== DEBUG 3: condition parts =====
         # if self.iteration == 0:
@@ -729,7 +903,13 @@ class PertAE(torch.nn.Module):
         zt = (1.0 - t) * z0_cfm + t * z1_cfm
         target_v = z1_cfm - z0_cfm
 
-        pred_v = self.velocity(zt, t, cond_parts)
+        # pred_v = self.velocity(zt, t, cond_parts)
+        pred_v = self.velocity(
+            zt,
+            t,
+            cond_parts,
+            source_context=source_context,
+        )
 
         # # ===== DEBUG 4: flow matching tensors =====
         # if self.iteration == 0:
@@ -754,7 +934,12 @@ class PertAE(torch.nn.Module):
         flow_loss = F.mse_loss(pred_v, target_v)
 
         # Endpoint prediction by integration
-        z1_pred = self.flow_euler(z0, cond_parts)
+        # z1_pred = self.flow_euler(z0, cond_parts)
+        z1_pred = self.flow_euler(
+            z0,
+            cond_parts,
+            source_context=source_context,
+        )
         gene_reconstructions, latent_treated = self.decode_gene(z1_pred, cond_parts)
 
         # # ===== DEBUG 5: endpoint and decoder =====
@@ -771,6 +956,17 @@ class PertAE(torch.nn.Module):
         #     assert torch.isfinite(z1_pred).all(), "z1_pred has NaN/Inf"
         #     assert torch.isfinite(gene_reconstructions).all(), \
         #         "gene_reconstructions has NaN/Inf"
+
+        if source_context is None:
+            print("source_context: None")
+        else:
+            print("source_context:", source_context.shape)
+
+        if source_context is not None:
+            assert source_context.shape == z0.shape, \
+                "source_context and z0 shape mismatch"
+            assert torch.isfinite(source_context).all(), \
+                "source_context has NaN/Inf"
 
         # Gene-level reconstruction loss
         afloss = self.loss_afmse(
@@ -809,11 +1005,21 @@ class PertAE(torch.nn.Module):
 
         mmd_weight = self.hparams.get("mmd", 0.0)
 
+        # loss = (
+        #     self.hparams.get("flow_co", 1.0) * flow_loss
+        #     + self.hparams.get("gene_co", 1.0) * reconstruction_loss
+        #     + self.hparams.get("latent_co", 0.1) * latent_loss
+        #     + mmd_weight * mmdloss
+        #     + kld_weight * kld_loss
+        # )
+        z0_ct_weight = self.hparams.get("z0_ct_co", 0.0)
+
         loss = (
             self.hparams.get("flow_co", 1.0) * flow_loss
             + self.hparams.get("gene_co", 1.0) * reconstruction_loss
             + self.hparams.get("latent_co", 0.1) * latent_loss
             + mmd_weight * mmdloss
+            + z0_ct_weight * z0_ct_loss
             + kld_weight * kld_loss
         )
 
@@ -896,5 +1102,9 @@ class PertAE(torch.nn.Module):
             "kld_weight": kld_weight,
             "kld_weighted": (kld_weight * kld_loss).item(),
             "loss_reconstruction": reconstruction_loss.item(),
+            "z0_ct_loss": z0_ct_loss.item(),
+            "z0_ct_weight": z0_ct_weight,
+            "z0_ct_weighted": (z0_ct_weight * z0_ct_loss).item(),
+            "z0_ct_acc": z0_ct_acc.item(),
         }
 
